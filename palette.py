@@ -5,20 +5,17 @@ MIN = -500
 MAX = 9000
 CYCLE = 500
 
-HUE_RED = (lambda c: math.atan2(c[2], c[1]))(Color.NewFromRgb(1., 0., 0.).lab)
+import munsell as m
+m.init()
+
 def hlc_to_rgb(h, l, c):
-    theta = 2*math.pi*h + HUE_RED
-    return Color.NewFromLab(
-        100. * l,
-        c * math.cos(theta),
-        c * math.sin(theta)
-    ).rgb
+    return m.convert(360.*h, 100.*l, 20.*c)
 
 def rgb_to_hex(rgb):
     return [min(max(int(256.*k), 0), 255) for k in rgb]
 
 def in_gamut(c):
-    return all(k >= 0. and k < 1. for k in c)
+    return c is not None and all(k >= 0. and k < 1. for k in c)
 
 def solve(func, min, max, res):
     if not func(min):
@@ -51,11 +48,11 @@ def color(elev):
     SATMAX = .6
 
     hue = ka + (HUE0_ABOVE if elev > 0 else HUE0_BELOW)
-    lummax = solve(lambda x: in_gamut(hlc_to_rgb(hue, x, SATMIN)), .5, 1., 1e-4)
-    lummin = solve(lambda x: in_gamut(hlc_to_rgb(hue, x, SATMIN)), .5, 0., 1e-4)
+    lummax = solve(lambda x: in_gamut(hlc_to_rgb(hue, x, SATMIN)), .5, 1., 1e-6)
+    lummin = solve(lambda x: in_gamut(hlc_to_rgb(hue, x, SATMIN)), .5, 0., 1e-6)
     val = mix(kval, lummin, lummax)
     satmax = mix(ksat, SATMIN, SATMAX)
-    satmax = min(satmax, solve(lambda x: in_gamut(hlc_to_rgb(hue, val, x)), SATMIN, satmax, .0001))
+    satmax = min(satmax, solve(lambda x: in_gamut(hlc_to_rgb(hue, val, x)), SATMIN, satmax, 1e-6) - 1e-6)
     sat = mix(1. if kb < .5 else .3333, SATMIN, satmax)
 
     return hlc_to_rgb(hue, val, sat)
