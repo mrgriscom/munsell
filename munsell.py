@@ -1,9 +1,13 @@
 import re
 import math
+import bisect
 from colormath.color_objects import xyYColor, XYZColor, LabColor, sRGBColor
 from colormath.color_conversions import convert_color
 
 EPSILON = 1e-6
+
+HUE_RES = 9.
+CHROMA_RES = 2.
 
 LUT = {}
 lums = {}
@@ -56,18 +60,19 @@ def convert(h, v, c):
     h = float(h)
     v = float(v)
     c = float(c)
-
     h = h % 360.
-    h0 = math.floor(h / 9.) * 9.
-    v0 = [k for k in lums if k <= v and k < 100][-1]
-    c0 = math.floor(c / 2.) * 2.
-    h1 = (h0 + 9.) % 360.
-    v1 = lums[lums.index(v0)+1]
+
+    h0 = math.floor(h / HUE_RES) * HUE_RES
+    h1 = (h0 + HUE_RES) % 360.
+    v0ix = min(bisect.bisect_right(lums, v) - 1, len(lums) - 2)
+    v0 = lums[v0ix]
+    v1 = lums[v0ix+1]
+    c0 = math.floor(c / CHROMA_RES) * CHROMA_RES
     c1 = c0 + 2
 
-    kh = (h - h0) / 9.
+    kh = (h - h0) / HUE_RES
     kv = (v - v0) / (v1 - v0)
-    kc = (c - c0) / 2.
+    kc = (c - c0) / CHROMA_RES
 
     def lookup(h, v, c):
         return LUT[(h if c > 0 else 0, v, c)].get_value_tuple()
@@ -99,3 +104,60 @@ def convert(h, v, c):
         return None
 
     return convert_color(LabColor(*result), sRGBColor).get_value_tuple()
+
+def munsell(h, l, c):
+    return convert(360.*h, 100.*l, 20.*c)
+
+def in_gamut(c):
+    return c is not None and all(k >= 0. and k < 1. for k in c)
+
+def solve(func, min, max, res):
+    if not func(min):
+        return min
+    elif func(max):
+        return max
+    while True:
+        x = .5 * (min + max)
+        if abs(max - min) <= res:
+            return x
+        if func(x):
+            min = x
+        else:
+            max = x
+
+def lum_limits(hue, chroma):
+    return [solve(lambda x: in_gamut(munsell(hue, x, chroma)), .5, extreme, EPSILON) for extreme in (0., 1.)]
+
+def chroma_limit(hue, lum):
+    return solve(lambda x: in_gamut(munsell(hue, lum, x)), 0, 50, EPSILON) - EPSILON
+
+def rgb_to_hex(rgb):
+    return [min(max(int(256.*k), 0), 255) for k in rgb]
+
+def write_card(func, pathout):
+    W = 100
+    H = 100
+
+    import tempfile
+    tmpraw = tempfile.mktemp()
+
+    with open(tmpraw, 'w') as f:
+        for i in range(H):
+            y = (H-.5-i)/H
+            for j in range(W):
+                x = (j+.5)/W
+                color = munsell(*func(x, y))
+                if not in_gamut(color):
+                    color = (.5, .5, .5)
+                f.write(''.join(chr(k) for k in rgb_to_hex(color)))
+    import os
+    os.popen('convert -size %dx%d -depth 8 rgb:%s %s.png' % (W, H, tmpraw, pathout))
+
+
+if __name__ == "__main__":
+
+    init()
+    for hue in range(0, 360, 5):
+        write_card(lambda x, y: (hue / 360., y, x), '~/tmp/munsell/clh%03d' % hue)
+    for chroma in range(0, 126):
+        write_card(lambda x, y: (x, y, .01*chroma), '~/tmp/munsell/hlc%03d' % chroma)
