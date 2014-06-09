@@ -8,33 +8,12 @@ CYCLE = 500
 import munsell as m
 m.init()
 
-def hlc_to_rgb(h, l, c):
-    return m.convert(360.*h, 100.*l, 20.*c)
-
-def rgb_to_hex(rgb):
-    return [min(max(int(256.*k), 0), 255) for k in rgb]
-
-def in_gamut(c):
-    return c is not None and all(k >= 0. and k < 1. for k in c)
-
-def solve(func, min, max, res):
-    if not func(min):
-        return min
-    elif func(max):
-        return max
-    while True:
-        x = .5 * (min + max)
-        if abs(max - min) <= res:
-            return x
-        if func(x):
-            min = x
-        else:
-            max = x
-
-def mix(k, min, max):
-    return (1-k)*min + k*max
-
 def color(elev):
+    HUE0_ABOVE = .08
+    HUE0_BELOW = .71
+    SATMIN = .05
+    SATMAX = .6
+
     ka = float(elev) / (MAX - MIN)
     kb = (float(elev) / CYCLE) % 1. # no phase change needed for below sea level,
                                     # as change in hue and lummin is apparent enough
@@ -42,23 +21,17 @@ def color(elev):
     kval = 1 - abs(1 - 2 * kb)
     ksat = abs(math.sin(2*math.pi*kb))
 
-    HUE0_ABOVE = .08
-    HUE0_BELOW = .7
-    SATMIN = .05
-    SATMAX = .6
-
     hue = ka + (HUE0_ABOVE if elev > 0 else HUE0_BELOW)
-    lummax = solve(lambda x: in_gamut(hlc_to_rgb(hue, x, SATMIN)), .5, 1., 1e-6)
-    lummin = solve(lambda x: in_gamut(hlc_to_rgb(hue, x, SATMIN)), .5, 0., 1e-6)
-    val = mix(kval, lummin, lummax)
-    satmax = mix(ksat, SATMIN, SATMAX)
-    satmax = min(satmax, solve(lambda x: in_gamut(hlc_to_rgb(hue, val, x)), SATMIN, satmax, 1e-6) - 1e-6)
-    sat = mix(1. if kb < .5 else .3333, SATMIN, satmax)
+    lummin, lummax = m.lum_limits(hue, SATMIN)
+    val = m.mix(kval, lummin, lummax)
+    satmax = m.mix(ksat, SATMIN, SATMAX)
+    satmax = min(satmax, m.chroma_limit(hue, val))
+    sat = m.mix(1. if kb < .5 else .3333, SATMIN, satmax)
 
-    return hlc_to_rgb(hue, val, sat)
+    return m.munsell(hue, val, sat)
     
 def print_step(elev):
-    print elev, ' '.join(str(k) for k in rgb_to_hex(color(elev)))
+    print elev, ' '.join(str(k) for k in m.rgb_to_hex(color(elev)))
 
 def palette():
     STEP = float(CYCLE) / 200
@@ -74,7 +47,7 @@ def legend():
     data = []
     for i in range(W):
         elev = MIN + (i + .5)/W * (MAX - MIN)
-        data.extend(chr(k) for k in rgb_to_hex(color(elev)))
+        data.extend(chr(k) for k in m.rgb_to_hex(color(elev)))
     line = ''.join(data)
 
     import tempfile
@@ -87,5 +60,5 @@ def legend():
     os.popen('convert -size %dx%d -depth 8 rgb:%s png:%s' % (W, H, tmpraw, tmpout))
     print open(tmpout).read()
 
-#palette()
-legend()
+palette()
+#legend()
