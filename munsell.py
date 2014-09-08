@@ -135,8 +135,8 @@ def rgb_to_hex(rgb):
     return [min(max(int(256.*k), 0), 255) for k in rgb]
 
 def write_card(func, pathout):
-    W = 100
-    H = 100
+    W = 200
+    H = 200
 
     import tempfile
     tmpraw = tempfile.mktemp()

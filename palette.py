@@ -60,5 +60,5 @@ def legend():
     os.popen('convert -size %dx%d -depth 8 rgb:%s png:%s' % (W, H, tmpraw, tmpout))
     print open(tmpout).read()
 
-palette()
-#legend()
+#palette()
+legend()
